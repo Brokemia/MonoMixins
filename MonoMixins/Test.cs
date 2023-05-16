@@ -25,7 +25,7 @@ namespace MonoMixins {
             Console.WriteLine("hello " + i);
         }
 
-        [ModifyArg(typeof(Test), "callManyParameters", "System.Void MonoMixins.Test::manyParameters(System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32)", Index = -1, TakeArguments = true, AsDelegate = false)]
+        [ModifyArg(typeof(Test), "callManyParameters", "MonoMixins.Test::manyParameters", Index = -1, TakeArguments = true, AsDelegate = false)]
         public static void modifyParams(ref int a, ref int b, ref int c, ref int d, ref int e, ref int f, ref int g, ref int h, ref int i, ref int j, ref int k, ref int l, ref int m, ref int n) {
             Console.WriteLine(c);
             c = 4673;

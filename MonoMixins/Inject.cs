@@ -51,18 +51,31 @@ namespace MonoMixins {
     }
 
     public class InjectNewAttribute : InjectInstructionAttribute {
-        
-        public InjectNewAttribute(Type type, string method, string targetCtor) : base(type, method, i => i.OpCode == OpCodes.Newobj
-                                        && ((MethodReference)i.Operand).FullName == targetCtor) {
-            
+
+        public string TargetConstructor { get; set; }
+
+        public InjectNewAttribute(Type type, string method, string targetCtor) : base(type, method) {
+            TargetConstructor = targetCtor;
+        }
+
+        protected override bool MatchInstruction(Instruction ins) {
+            var method = ins.Operand as MethodReference;
+            return ins.OpCode == OpCodes.Newobj && (method.FullName == TargetConstructor || method.Name == TargetConstructor || $"{method.DeclaringType}::{method.Name}" == TargetConstructor);
         }
     }
 
     public class InjectCallAttribute : InjectInstructionAttribute {
-        
-        public InjectCallAttribute(Type type, string method, string targetMethod) : base(type, method, i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt)
-                                        && ((MethodReference)i.Operand).FullName == targetMethod) {
-            
+
+        public string TargetMethod { get; set; }
+
+        public InjectCallAttribute(Type type, string method, string targetMethod) : base(type, method) {
+            TargetMethod = targetMethod;
+        }
+
+        protected override bool MatchInstruction(Instruction ins) {
+            var method = ins.Operand as MethodReference;
+            return (ins.OpCode == OpCodes.Call || ins.OpCode == OpCodes.Callvirt) &&
+                (method.FullName == TargetMethod || method.Name == TargetMethod || $"{method.DeclaringType}::{method.Name}" == TargetMethod);
         }
     }
 
