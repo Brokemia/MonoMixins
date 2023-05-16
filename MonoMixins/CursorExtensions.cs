@@ -19,7 +19,7 @@ namespace MonoMixins {
                 });
             }
 
-            return il.Emit(index <= byte.MaxValue ? OpCodes.Ldloc_S : OpCodes.Ldloc, index);
+            return index <= byte.MaxValue ? il.Emit(OpCodes.Ldloc_S, (byte)index) : il.Emit(OpCodes.Ldloc, index);
         }
 
         public static ILCursor EmitStloc(this ILCursor il, int index) {
@@ -32,7 +32,7 @@ namespace MonoMixins {
                 });
             }
 
-            return il.Emit(index <= byte.MaxValue ? OpCodes.Stloc_S : OpCodes.Stloc, index);
+            return index <= byte.MaxValue ? il.Emit(OpCodes.Stloc_S, (byte)index) : il.Emit(OpCodes.Stloc, index);
         }
 
         public static ILCursor EmitLdarg(this ILCursor il, int index) {
@@ -45,7 +45,11 @@ namespace MonoMixins {
                 });
             }
 
-            return il.Emit(index <= byte.MaxValue ? OpCodes.Ldarg_S : OpCodes.Ldarg, index);
+            return index <= byte.MaxValue ? il.Emit(OpCodes.Ldarg_S, (byte)index) : il.Emit(OpCodes.Ldarg, index);
+        }
+
+        public static ILCursor EmitLdloca(this ILCursor il, int index) {
+            return index <= byte.MaxValue ? il.Emit(OpCodes.Ldloca_S, (byte)index) : il.Emit(OpCodes.Ldloca, index);
         }
     }
 }
