@@ -10,20 +10,11 @@ using System.Reflection;
 namespace MonoMixins {
     public static class Mixin {
 
-        static void Main(string[] args) {
-            //CreateHook(Test.testNew, Test.hi);
-            Load(typeof(Mixin).Assembly);
+        public static bool DEBUG_PRINT = false;
 
-            Console.WriteLine("\n\nhello() Output:\n");
-            int i = 2;
-            Test.hello(i);
-
-            Console.WriteLine("\n\ncallManyParameters() Output:\n");
-            Test.callManyParameters();
-            Console.ReadKey();
-        }
-
-        public static void Load(Assembly assembly) {
+        public static void Load(Assembly assembly = null) {
+            assembly ??= Assembly.GetCallingAssembly();
+            
             foreach (var type in assembly.DefinedTypes) {
                 foreach (var method in type.GetMethods()) {
                     foreach (var attr in method.GetCustomAttributes()) {
@@ -36,8 +27,10 @@ namespace MonoMixins {
         }
 
         public static void Patch(ILContext ctx, MethodInfo src, InjectAttribute inject) {
-            Console.WriteLine("Before:\n");
-            PrintIL(ctx.Instrs);
+            if (DEBUG_PRINT) {
+                Console.WriteLine("Before:\n");
+                PrintIL(ctx.Instrs);
+            }
 
             List<Instruction> injectBefore = inject.FindTargets(ctx);
 
@@ -49,8 +42,10 @@ namespace MonoMixins {
                 }
             }
 
-            Console.WriteLine("\n\nAfter:\n");
-            PrintIL(ctx.Instrs);
+            if (DEBUG_PRINT) {
+                Console.WriteLine("\n\nAfter:\n");
+                PrintIL(ctx.Instrs);
+            }
         }
 
         public static void InjectAsDelegate(ILContext ctx, MethodInfo src, Instruction injectPoint, InjectAttribute inject) {
@@ -88,6 +83,19 @@ namespace MonoMixins {
                     }
                 } else {
                     il.EmitLdloca(lastIndex);
+                }
+            }
+
+            // Load locals that we are capturing
+            if (inject.CaptureLocals != null) {
+                var srcParams = src.GetParameters();
+                for (int i = 0; i < inject.CaptureLocals.Length; i++) {
+                    // If `ref` or `out` is used, pass the local's address instead, so that the user can edit it
+                    if (srcParams[srcParams.Length - inject.CaptureLocals.Length + i].ParameterType.IsByRef) {
+                        il.EmitLdloca(inject.CaptureLocals[i]);
+                    } else {
+                        il.EmitLdloc(inject.CaptureLocals[i]);
+                    }
                 }
             }
 
@@ -151,6 +159,28 @@ namespace MonoMixins {
                 }
             }
 
+            int firstCapturedRefLocal = locals.Count;
+            // Maps arg index (relative to end of other args) to local index
+            List<int> localCaptureMap = new();
+
+            // If captured locals are taken by reference, we need to make ref variables for them
+            int capturedLocalCount = 0;
+            if (inject.CaptureLocals != null) {
+                capturedLocalCount = inject.CaptureLocals.Length;
+                var srcParams = src.GetParameters();
+                for (int i = 0; i < capturedLocalCount; i++) {
+                    if (srcParams[srcParams.Length - capturedLocalCount + i].ParameterType.IsByRef) {
+                        int refLocal = locals.Count;
+                        locals.Add(new VariableDefinition(locals[inject.CaptureLocals[i]].VariableType));
+                        il.EmitLdloca(inject.CaptureLocals[i]);
+                        il.EmitStloc(refLocal);
+                        localCaptureMap.Add(refLocal);
+                    } else {
+                        localCaptureMap.Add(inject.CaptureLocals[i]);
+                    }
+                }
+            }
+
             int ctxParamCount = ctx.Method.Parameters.Count;
             foreach (var ins in srcBody.Instructions) {
                 if (ins.MatchRet()) {
@@ -173,18 +203,35 @@ namespace MonoMixins {
                     continue;
                 }
                 
+                int modifiedArgCount = 0;
                 if (modifyArg != null) {
-                    if (ins.MatchLdarg(out int arg) && arg >= ctxParamCount) {
-                        il.EmitLdloc(locals.Count - 1 - arg + ctxParamCount);
+                    modifiedArgCount = modifyArg.Index < 0 ? callParamCount : 1;
+                    if (ins.MatchLdarg(out int arg) && arg >= ctxParamCount && arg < ctxParamCount + modifiedArgCount) {
+                        il.EmitLdloc(firstCapturedRefLocal - 1 - arg + ctxParamCount);
                         continue;
-                    } else if (ins.MatchLdarga(out arg) && arg >= ctxParamCount) {
-                        il.EmitLdloca(locals.Count - 1 - arg + ctxParamCount);
+                    } else if (ins.MatchLdarga(out arg) && arg >= ctxParamCount && arg < ctxParamCount + modifiedArgCount) {
+                        il.EmitLdloca(firstCapturedRefLocal - 1 - arg + ctxParamCount);
                         continue;
-                    } else if (ins.MatchStarg(out arg) && arg >= ctxParamCount) {
-                        il.EmitStloc(locals.Count - 1 - arg + ctxParamCount);
+                    } else if (ins.MatchStarg(out arg) && arg >= ctxParamCount && arg < ctxParamCount + modifiedArgCount) {
+                        il.EmitStloc(firstCapturedRefLocal - 1 - arg + ctxParamCount);
                         continue;
                     }
                 }
+
+                // If a user assigns to an argument here, it will actually propagate back to the local, even if it's not passed by ref
+                if (inject.CaptureLocals != null) {
+                    if (ins.MatchLdarg(out int arg) && arg >= ctxParamCount + modifiedArgCount) {
+                        il.EmitLdloc(localCaptureMap[arg - ctxParamCount - modifiedArgCount]);
+                        continue;
+                    } else if (ins.MatchLdarga(out arg) && arg >= ctxParamCount + modifiedArgCount) {
+                        il.EmitLdloca(localCaptureMap[arg - ctxParamCount - modifiedArgCount]);
+                        continue;
+                    } else if (ins.MatchStarg(out arg) && arg >= ctxParamCount + modifiedArgCount) {
+                        il.EmitStloc(localCaptureMap[arg - ctxParamCount - modifiedArgCount]);
+                        continue;
+                    }
+                }
+
                 ctx.IL.InsertBefore(injectPoint, ins);
             }
 

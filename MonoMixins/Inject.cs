@@ -18,6 +18,10 @@ namespace MonoMixins {
 
         public virtual bool InjectAfter { get; set; }
 
+        // NOTE: if AsDelegate = false and the user assigns to a captured local, it will affect that local, regardless of whether it's passed by ref or not
+        // This is a possible FIXME, but maybe just document it
+        public int[] CaptureLocals { get; set; }
+
         // Whether the method should accept the arguments of the patched method
         public bool TakeArguments { get; set; }
 
